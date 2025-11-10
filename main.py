@@ -75,3 +75,22 @@ async def shorten_a_url(payload: URLCreate, db: AsyncSession = Depends(get_db)):
         shortened_url=f"{BASE_URL}/{url.short_code}",
         is_active=url.is_active,
     )
+
+
+@app.delete("/api/urls/{short_code}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_url(short_code: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.URL).where(
+            models.URL.short_code == short_code, models.URL.is_active
+        )
+    )
+    url = result.scalars().first()
+
+    if url:
+        url.is_active = False
+        await db.commit()
+        return
+    else:
+        raise HTTPException(
+            status_code=404, detail=f"URL {BASE_URL}/{short_code} doesn't exist"
+        )
