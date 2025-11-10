@@ -1,7 +1,5 @@
 import os
 from contextlib import asynccontextmanager
-import secrets
-import string
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -11,6 +9,7 @@ import validators
 from models import Base
 from database import engine, get_db
 import models
+from utils import encode_id
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
@@ -57,34 +56,17 @@ async def redirect_to_original_url(short_code: str, db: AsyncSession = Depends(g
         )
 
 
-async def generate_unique_code(db, length) -> str:
-    # Define allowed characters
-    chars = string.ascii_uppercase + string.digits
-    # Keep trying until a unique code is found
-    while True:
-        # Build the candidate string
-        candidate = ""
-        for _ in range(length):
-            random_char = secrets.choice(chars)
-            candidate += random_char
-        # Check if this code already exists
-        result = await db.execute(
-            select(models.URL).where(models.URL.short_code == candidate)
-        )
-        # If no existing code exists, return candidate
-        if not result.scalars().first():
-            return candidate
-
-
 @app.post("/api/urls", response_model=URLResponse, status_code=status.HTTP_201_CREATED)
 async def shorten_a_url(payload: URLCreate, db: AsyncSession = Depends(get_db)):
     if not validators.url(payload.url_to_shorten):
         raise HTTPException(status_code=400, detail="Invalid URL")
 
-    short_code = await generate_unique_code(db, 5)
-
-    url = models.URL(original_url=payload.url_to_shorten, short_code=short_code)
+    url = models.URL(original_url=payload.url_to_shorten)
     db.add(url)
+    await db.flush()
+
+    short_code = encode_id(url.id)
+    url.short_code = short_code
     await db.commit()
     await db.refresh(url)
 
